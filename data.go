@@ -2,6 +2,13 @@ package main
 
 import "errors"
 
+type DataAccessor interface {
+	Get(key string) (*string, error)
+	Set(key, value string) error
+	Delete(key string) error
+}
+
+// the structure of stored data is the same everywhere so I have created an embeddable struct for that
 type DataStore struct {
 	data map[string]string
 }

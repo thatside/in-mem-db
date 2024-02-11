@@ -41,6 +41,44 @@ func TestSimpleTransactionRollback(t *testing.T) {
 	}
 }
 
+func TestNestedTransactionCommitWithSet(t *testing.T) {
+	db := InMemDb{DataStore{data: map[string]string{}}, nil}
+	db.Set(key1, value1)
+	db.StartTransaction()
+	db.Set(key1, value2)
+	key1Value, _ := db.Get(key1)
+	if *key1Value != value2 {
+		t.Fatalf("Expected to get a uncommited transaction value %s, got %s", value2, *key1Value)
+	}
+	db.StartTransaction()
+	db.Set(key1, "value3")
+	key1Value, _ = db.Get(key1)
+	if *key1Value != "value3" {
+		t.Fatalf("Expected to get a uncommited nested transaction value %s, got %s", "value3", *key1Value)
+	}
+	db.StartTransaction()
+	db.Set(key1, "value4")
+	key1Value, _ = db.Get(key1)
+	if *key1Value != "value4" {
+		t.Fatalf("Expected to get a uncommited nested nested transaction value %s, got %s", "value4", *key1Value)
+	}
+	db.Commit()
+	key1Value, _ = db.Get(key1)
+	if *key1Value != "value4" {
+		t.Fatalf("Expected to get a uncommited nested nested transaction value %s, got %s", "value4", *key1Value)
+	}
+	db.Commit()
+	key1Value, _ = db.Get(key1)
+	if *key1Value != "value4" {
+		t.Fatalf("Expected to get a uncommited nested nested transaction value %s, got %s", "value4", *key1Value)
+	}
+	db.Commit()
+	key1Value, _ = db.Get(key1)
+	if *key1Value != "value4" {
+		t.Fatalf("Expected to get a uncommited nested nested transaction value %s, got %s", "value4", *key1Value)
+	}
+}
+
 func TestNestedTransactionCommit(t *testing.T) {
 	db := InMemDb{DataStore{data: map[string]string{}}, nil}
 	db.Set(key1, value1)

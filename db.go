@@ -10,25 +10,25 @@ type InMemDb struct {
 	activeTransaction *Transaction
 }
 
-func (db *InMemDb) Get(key string) (*string, error) {
+// this method was introduced to improve readability
+func (db *InMemDb) getDataAccessor() DataAccessor {
 	if db.activeTransaction != nil {
-		return db.activeTransaction.Get(key)
+		return db.activeTransaction
 	}
-	return db.DataStore.Get(key)
+
+	return &db.DataStore
+}
+
+func (db *InMemDb) Get(key string) (*string, error) {
+	return db.getDataAccessor().Get(key)
 }
 
 func (db *InMemDb) Set(key, value string) error {
-	if db.activeTransaction != nil {
-		return db.activeTransaction.Set(key, value)
-	}
-	return db.DataStore.Set(key, value)
+	return db.getDataAccessor().Set(key, value)
 }
 
 func (db *InMemDb) Delete(key string) error {
-	if db.activeTransaction != nil {
-		return db.activeTransaction.Delete(key)
-	}
-	return db.DataStore.Delete(key)
+	return db.getDataAccessor().Delete(key)
 }
 
 func (db *InMemDb) StartTransaction() error {
@@ -42,38 +42,39 @@ func (db *InMemDb) StartTransaction() error {
 
 	db.activeTransaction = &Transaction{
 		DataStore: DataStore{data: maps.Clone(db.data)},
+		depth:     1,
 	}
 
 	return nil
 }
 
 func (db *InMemDb) Commit() error {
-	if db.activeTransaction != nil {
-		t := db.activeTransaction.getDeepestTransaction()
-		if t.parentTransaction != nil {
-			return t.commit()
-		}
-
-		db.data = t.data
-		t.data = nil
-		db.activeTransaction = nil
-		return nil
+	if db.activeTransaction == nil {
+		return errors.New("transaction not started")
 	}
 
-	return errors.New("transaction not started")
+	t := db.activeTransaction.getDeepestTransaction()
+	if t.parentTransaction != nil {
+		return t.commit()
+	}
+
+	db.data = t.data
+	t.data = nil
+	db.activeTransaction = nil
+	return nil
 }
 
 func (db *InMemDb) Rollback() error {
-	if db.activeTransaction != nil {
-		t := db.activeTransaction.getDeepestTransaction()
-		if t.parentTransaction != nil {
-			return t.rollback()
-		}
-
-		t.data = nil
-		db.activeTransaction = nil
-		return nil
+	if db.activeTransaction == nil {
+		return errors.New("transaction not started")
 	}
 
-	return errors.New("transaction not started")
+	t := db.activeTransaction.getDeepestTransaction()
+	if t.parentTransaction != nil {
+		return t.rollback()
+	}
+
+	t.data = nil
+	db.activeTransaction = nil
+	return nil
 }

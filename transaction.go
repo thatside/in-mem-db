@@ -5,46 +5,36 @@ import (
 	"maps"
 )
 
+// the limit is arbitrary here as Go can support much deeper recursive calls
 const maxTransactionDepth = 5
 
 type Transaction struct {
 	DataStore
+	depth             int
 	parentTransaction *Transaction
 	nestedTransaction *Transaction
 }
 
 func (t *Transaction) startTransaction() (*Transaction, error) {
-	if t.nestedTransaction != nil {
-		return t.startNestedTransaction(maps.Clone(t.data), 1)
-	}
+	deepestTransaction := t.getDeepestTransaction()
 
-	t.nestedTransaction = &Transaction{
-		parentTransaction: t,
-		DataStore: DataStore{
-			maps.Clone(t.data),
-		},
-	}
-
-	return t, nil
-}
-
-func (t *Transaction) startNestedTransaction(data map[string]string, depth int) (*Transaction, error) {
-	if depth > maxTransactionDepth {
+	resultDepth := deepestTransaction.depth + 1
+	if resultDepth > maxTransactionDepth {
 		return nil, errors.New("max transaction depth reached")
 	}
 
-	if t.nestedTransaction != nil {
-		return t.startNestedTransaction(data, depth+1)
-	}
+	// we want a full copy of parent transaction data here to pass to the child
+	data := maps.Clone(deepestTransaction.data)
 
-	t.nestedTransaction = &Transaction{
-		parentTransaction: t,
+	deepestTransaction.nestedTransaction = &Transaction{
+		parentTransaction: deepestTransaction,
+		depth:             deepestTransaction.depth + 1,
 		DataStore: DataStore{
 			data,
 		},
 	}
 
-	return t, nil
+	return deepestTransaction, nil
 }
 
 func (t *Transaction) getDeepestTransaction() *Transaction {
@@ -56,39 +46,37 @@ func (t *Transaction) getDeepestTransaction() *Transaction {
 }
 
 func (t *Transaction) Get(key string) (*string, error) {
-	if t.nestedTransaction != nil {
-		return t.getDeepestTransaction().Get(key)
-	}
-
-	return t.DataStore.Get(key)
+	return t.getDeepestTransaction().DataStore.Get(key)
 }
 
 func (t *Transaction) Set(key, value string) error {
-	if t.nestedTransaction != nil {
-		return t.getDeepestTransaction().Set(key, value)
-	}
-
-	return t.DataStore.Set(key, value)
+	return t.getDeepestTransaction().DataStore.Set(key, value)
 }
 
 func (t *Transaction) Delete(key string) error {
-	if t.nestedTransaction != nil {
-		return t.getDeepestTransaction().Delete(key)
-	}
-
-	return t.DataStore.Delete(key)
+	return t.getDeepestTransaction().DataStore.Delete(key)
 }
 
 func (t *Transaction) commit() error {
-	contextData := t.data
-	t.parentTransaction.data = contextData
+	if t.parentTransaction == nil {
+		return errors.New("no parent transaction to commit to")
+	}
+	// update parent transaction data
+	t.parentTransaction.data = t.data
+	// clean up all references and data
 	t.parentTransaction.nestedTransaction = nil
 	t.data = nil
+	t.parentTransaction = nil
 	return nil
 }
 
 func (t *Transaction) rollback() error {
+	if t.parentTransaction == nil {
+		return errors.New("no parent transaction to rollback onto")
+	}
+	// clean up all references and data
 	t.parentTransaction.nestedTransaction = nil
 	t.data = nil
+	t.parentTransaction = nil
 	return nil
 }
